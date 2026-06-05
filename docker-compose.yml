@@ -1,0 +1,7 @@
+services:
+  gongformat:
+    build: .
+    image: gongformat:local
+    ports:
+      - "8080:80"
+    restart: unless-stopped

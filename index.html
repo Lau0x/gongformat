@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GongFormat</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%231d2a26'/%3E%3Ctext x='32' y='42' text-anchor='middle' font-size='34' fill='white' font-family='Arial'%3EG%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="styles.css?v=20260605-brand">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">G</span>
+          <div class="brand-copy">
+            <strong>GongFormat</strong>
+            <span>公众号 Markdown 排版工具</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="ghost-button" id="toggleDrafts" type="button" aria-expanded="false">草稿</button>
+          <button class="ghost-button" id="toggleControls" type="button">设置</button>
+          <button class="ghost-button" id="copyMarkdown">复制 Markdown</button>
+          <button class="ghost-button" id="copyHtml">复制 HTML</button>
+          <button class="primary-button" id="copyRich">复制到公众号</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="draft-sidebar" aria-label="文章草稿">
+          <div class="draft-head">
+            <span>文章草稿</span>
+            <button id="newDraftButton" class="icon-button" type="button" title="新增文章">+</button>
+          </div>
+          <div id="draftList" class="draft-list"></div>
+        </aside>
+
+        <section class="editor-panel" aria-label="Markdown 编辑">
+          <div class="panel-bar">
+            <input id="titleInput" class="title-input" type="text" aria-label="文章标题">
+            <button id="resetButton" class="icon-button" title="恢复示例稿">↺</button>
+          </div>
+          <textarea id="markdownInput" class="markdown-input" spellcheck="false"></textarea>
+        </section>
+
+        <section class="preview-panel" aria-label="微信预览">
+          <div class="preview-top">
+            <span>微信正文预览</span>
+            <div class="preview-top-actions">
+              <div class="preview-mode-switch" aria-label="预览模式">
+                <button id="mobilePreview" class="preview-mode-button" type="button" title="手机预览" aria-label="手机预览" aria-pressed="true">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="8" y="3" width="8" height="18" rx="2"></rect>
+                    <path d="M11 18h2"></path>
+                  </svg>
+                </button>
+                <button id="desktopPreview" class="preview-mode-button" type="button" title="电脑预览" aria-label="电脑预览" aria-pressed="false">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="4" y="5" width="16" height="11" rx="1.5"></rect>
+                    <path d="M9 20h6M12 16v4"></path>
+                  </svg>
+                </button>
+              </div>
+              <span id="saveState">已保存</span>
+            </div>
+          </div>
+          <div id="phoneStage" class="phone-stage">
+            <article class="wechat-paper">
+              <section id="wechatPreview" class="wechat-preview"></section>
+            </article>
+          </div>
+        </section>
+
+        <aside class="control-rail" aria-label="发布设置">
+          <div class="control-block">
+            <span class="control-label">主题</span>
+            <div class="theme-list" id="themeList"></div>
+          </div>
+
+          <div class="control-block">
+            <span class="control-label">排版</span>
+            <label class="toggle-row">
+              <input id="indentToggle" type="checkbox">
+              <span>首段缩进</span>
+            </label>
+            <label class="toggle-row">
+              <input id="centerImageToggle" type="checkbox" checked>
+              <span>图片居中</span>
+            </label>
+            <label class="toggle-row">
+              <input id="darkCodeToggle" type="checkbox">
+              <span>深色代码</span>
+            </label>
+          </div>
+
+          <div class="control-block image-control">
+            <div class="control-head">
+              <span class="control-label">图片</span>
+              <button id="browseImages" class="mini-button" type="button">选择</button>
+            </div>
+            <label id="imageDropzone" class="dropzone">
+              <input id="imageInput" type="file" accept="image/*" multiple>
+              <strong>拖拽 / 粘贴</strong>
+              <span>公网图床</span>
+            </label>
+            <div class="upload-config">
+              <input id="uploadEndpoint" type="url" placeholder="上传接口 URL">
+              <input id="uploadToken" type="password" placeholder="Token">
+              <div class="upload-config-row">
+                <input id="uploadFieldName" type="text" placeholder="字段 image">
+                <input id="responsePath" type="text" placeholder="URL 字段 url">
+              </div>
+            </div>
+            <button id="uploadAll" class="upload-button" type="button">上传待处理图片</button>
+            <div id="imageQueue" class="image-queue"></div>
+          </div>
+
+          <div class="control-block stats-grid">
+            <div>
+              <strong id="wordCount">0</strong>
+              <span>字数</span>
+            </div>
+            <div>
+              <strong id="readTime">1</strong>
+              <span>分钟</span>
+            </div>
+            <div>
+              <strong id="imageCount">0</strong>
+              <span>图片</span>
+            </div>
+            <div>
+              <strong id="linkCount">0</strong>
+              <span>链接</span>
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="app.js?v=20260605-brand"></script>
+  </body>
+</html>
