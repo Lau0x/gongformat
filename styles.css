@@ -701,6 +701,7 @@ body.controls-open .control-rail {
 
 .wechat-paper {
   width: min(100%, 390px);
+  height: fit-content;
   min-height: 100%;
   background: #fff;
   box-shadow: var(--shadow);
