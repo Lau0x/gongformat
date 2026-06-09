@@ -1424,7 +1424,7 @@ function saveActiveDraft() {
 async function copyRichText() {
   if (!(await prepareImagesForCopy())) return;
 
-  const html = `<section data-gongformat="body">${refs.wechatPreview.innerHTML}</section>`;
+  const html = `<section data-gongformat="body" style="margin:0;padding:0;background:#fff;background-color:#fff;">${refs.wechatPreview.innerHTML}</section>`;
   const plain = refs.wechatPreview.innerText.trim();
 
   try {
@@ -1470,6 +1470,13 @@ function fallbackCopy(content, asHtml) {
   const target = document.createElement(asHtml ? "div" : "textarea");
   target.style.position = "fixed";
   target.style.left = "-9999px";
+  target.style.top = "0";
+  target.style.width = "680px";
+  target.style.margin = "0";
+  target.style.padding = "0";
+  target.style.background = "#fff";
+  target.style.backgroundColor = "#fff";
+  target.style.color = "#000";
 
   if (asHtml) {
     target.contentEditable = "true";
