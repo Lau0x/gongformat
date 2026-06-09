@@ -1012,9 +1012,13 @@ async function hasWechatCorsRiskImageRefs() {
 
   for (const url of [...new Set(urls)]) {
     const queued = uploadQueue.find((item) => item.remoteUrl === url);
-    if (queued && queued.corsOk === false) return true;
     if (queued && queued.corsOk === true) continue;
-    if (!(await testImageCors(url))) return true;
+    const corsOk = await testImageCors(url);
+    if (queued) {
+      queued.corsOk = corsOk;
+      renderImageQueue();
+    }
+    if (!corsOk) return true;
   }
 
   return false;
@@ -1023,9 +1027,22 @@ async function hasWechatCorsRiskImageRefs() {
 function testImageCors(url) {
   if (imageCorsCache.has(url)) return imageCorsCache.get(url);
 
-  const result = new Promise((resolve) => {
+  const result = fetch(url, {
+    method: "HEAD",
+    mode: "cors",
+    cache: "no-store"
+  })
+    .then((response) => response.ok)
+    .catch(() => testImageElementCors(url));
+
+  imageCorsCache.set(url, result);
+  return result;
+}
+
+function testImageElementCors(url) {
+  return new Promise((resolve) => {
     const image = new Image();
-    const timer = setTimeout(() => resolve(false), 6000);
+    const timer = setTimeout(() => resolve(false), 12000);
 
     image.crossOrigin = "anonymous";
     image.onload = () => {
@@ -1038,9 +1055,6 @@ function testImageCors(url) {
     };
     image.src = url;
   });
-
-  imageCorsCache.set(url, result);
-  return result;
 }
 
 function applyWechatStyles(root, theme, options) {
