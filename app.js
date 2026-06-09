@@ -20,6 +20,8 @@ const sampleMarkdown = `## 本期标题备选
 
 ![图片待添加](https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1000&q=80)
 
+图注：示例图片会在公众号里显示为灰色小字
+
 来源：\`https://example.com/project\`
 
 ### 一台能放进口袋的开源离网通讯设备
@@ -502,6 +504,7 @@ function render() {
   const source = markdownToHtml(getRenderableMarkdown(state.markdown));
   const cleaned = sanitizeHtml(source);
   const theme = themes[state.theme];
+  applyImageCaptions(cleaned);
   applyWechatStyles(cleaned, theme, state.options);
   wrapWechatContent(cleaned, theme);
   refs.wechatPreview.innerHTML = cleaned.innerHTML;
@@ -624,6 +627,59 @@ function sanitizeHtml(html) {
   });
 
   return doc.body;
+}
+
+function applyImageCaptions(root) {
+  [...root.querySelectorAll("p")].forEach((paragraph) => {
+    if (!paragraph.isConnected) return;
+
+    const images = paragraph.querySelectorAll("img");
+    if (images.length !== 1) return;
+
+    const image = images[0];
+    const inlineCaption = parseCaptionText(textWithoutImages(paragraph));
+
+    if (inlineCaption) {
+      paragraph.replaceWith(createImageFigure(root, image, inlineCaption));
+      return;
+    }
+
+    if (textWithoutImages(paragraph)) return;
+
+    const next = paragraph.nextElementSibling;
+    if (!next || next.tagName !== "P") return;
+
+    const nextCaption = parseCaptionText(next.textContent || "");
+    if (!nextCaption) return;
+
+    paragraph.replaceWith(createImageFigure(root, image, nextCaption));
+    next.remove();
+  });
+}
+
+function textWithoutImages(node) {
+  const clone = node.cloneNode(true);
+  clone.querySelectorAll("img").forEach((image) => image.remove());
+  return normalizeCaptionText(clone.textContent || "");
+}
+
+function parseCaptionText(text) {
+  const match = normalizeCaptionText(text).match(/^(?:图注|图片说明|说明|caption)\s*[：:]\s*(.+)$/i);
+  return match ? match[1].trim() : "";
+}
+
+function normalizeCaptionText(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function createImageFigure(root, image, caption) {
+  const figure = root.ownerDocument.createElement("figure");
+  const figcaption = root.ownerDocument.createElement("figcaption");
+
+  figcaption.textContent = caption;
+  figure.appendChild(image);
+  figure.appendChild(figcaption);
+  return figure;
 }
 
 function handlePasteImages(event) {
@@ -1097,11 +1153,16 @@ function applyWechatStyles(root, theme, options) {
       margin: options.centerImages ? "18px auto" : "18px 0",
       borderRadius: isWeekly ? "4px" : "6px"
     },
+    figure: {
+      margin: "0",
+      padding: "0",
+      textAlign: options.centerImages ? "center" : "left"
+    },
     figcaption: {
-      margin: "-8px 0 18px",
+      margin: "-6px 0 18px",
       color: mutedColor,
-      fontSize: "13px",
-      lineHeight: "22px",
+      fontSize: isWeekly ? "12px" : "13px",
+      lineHeight: isWeekly ? "20px" : "22px",
       textAlign: "center",
       fontFamily: baseFont
     },
