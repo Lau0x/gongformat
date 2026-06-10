@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>GongFormat</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%231d2a26'/%3E%3Ctext x='32' y='42' text-anchor='middle' font-size='34' fill='white' font-family='Arial'%3EG%3C/text%3E%3C/svg%3E">
-    <link rel="stylesheet" href="styles.css?v=20260609-copybg">
+    <link rel="stylesheet" href="styles.css?v=20260610-token">
   </head>
   <body>
     <div class="app-shell">
@@ -106,6 +106,10 @@
             <div class="upload-config">
               <input id="uploadEndpoint" type="url" placeholder="上传接口 URL">
               <input id="uploadToken" type="password" placeholder="Token">
+              <label class="toggle-row token-remember-row">
+                <input id="rememberUploadToken" type="checkbox">
+                <span>记住 Token（仅此浏览器）</span>
+              </label>
               <div class="upload-config-row">
                 <input id="uploadFieldName" type="text" placeholder="字段 image">
                 <input id="responsePath" type="text" placeholder="URL 字段 url">
@@ -138,6 +142,6 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="app.js?v=20260609-copybg"></script>
+    <script src="app.js?v=20260610-token"></script>
   </body>
 </html>

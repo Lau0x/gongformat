@@ -114,6 +114,7 @@ const refs = {
   imageDropzone: document.getElementById("imageDropzone"),
   uploadEndpoint: document.getElementById("uploadEndpoint"),
   uploadToken: document.getElementById("uploadToken"),
+  rememberUploadToken: document.getElementById("rememberUploadToken"),
   uploadFieldName: document.getElementById("uploadFieldName"),
   responsePath: document.getElementById("responsePath"),
   uploadAll: document.getElementById("uploadAll"),
@@ -152,6 +153,7 @@ function init() {
   refs.darkCodeToggle.checked = state.options.darkCode;
   refs.uploadEndpoint.value = state.upload.endpoint;
   refs.uploadToken.value = state.upload.token;
+  refs.rememberUploadToken.checked = state.upload.rememberToken;
   refs.uploadFieldName.value = state.upload.fieldName;
   refs.responsePath.value = state.upload.responsePath;
   bindEvents();
@@ -162,6 +164,7 @@ function init() {
 function normalizeUploadConfig() {
   state.upload.fieldName = state.upload.fieldName || "image";
   state.upload.responsePath = state.upload.responsePath || "url";
+  state.upload.rememberToken = Boolean(state.upload.rememberToken);
 }
 
 function loadState() {
@@ -181,6 +184,7 @@ function loadState() {
     upload: {
       endpoint: "",
       token: "",
+      rememberToken: false,
       fieldName: "image",
       responsePath: "url"
     }
@@ -188,6 +192,8 @@ function loadState() {
 
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    const storedUpload = stored && stored.upload ? stored.upload : {};
+    const rememberToken = Boolean(storedUpload.rememberToken);
     const merged = {
       ...defaults,
       ...stored,
@@ -197,8 +203,9 @@ function loadState() {
       },
       upload: {
         ...defaults.upload,
-        ...(stored && stored.upload ? stored.upload : {}),
-        token: ""
+        ...storedUpload,
+        rememberToken,
+        token: rememberToken ? (storedUpload.token || "") : ""
       }
     };
     if (!stored || stored.theme === "editorial") merged.theme = "weekly";
@@ -313,6 +320,7 @@ function bindEvents() {
   });
   refs.uploadEndpoint.addEventListener("input", () => updateUploadConfig("endpoint", refs.uploadEndpoint.value));
   refs.uploadToken.addEventListener("input", () => updateUploadConfig("token", refs.uploadToken.value));
+  refs.rememberUploadToken.addEventListener("change", () => updateUploadConfig("rememberToken", refs.rememberUploadToken.checked));
   refs.uploadFieldName.addEventListener("input", () => updateUploadConfig("fieldName", refs.uploadFieldName.value));
   refs.responsePath.addEventListener("input", () => updateUploadConfig("responsePath", refs.responsePath.value));
   refs.uploadAll.addEventListener("click", uploadAllImages);
@@ -495,6 +503,7 @@ function updateOption(key, value) {
 function updateUploadConfig(key, value) {
   state.upload[key] = value;
   normalizeUploadConfig();
+  refs.rememberUploadToken.checked = state.upload.rememberToken;
   refs.uploadFieldName.value = state.upload.fieldName;
   refs.responsePath.value = state.upload.responsePath;
   persistState();
@@ -1399,7 +1408,7 @@ function persistNow() {
     ...stateToSave,
     upload: {
       ...state.upload,
-      token: ""
+      token: state.upload.rememberToken ? state.upload.token : ""
     }
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(savedState));

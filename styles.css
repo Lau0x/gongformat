@@ -489,7 +489,7 @@ body.controls-open .control-rail {
   gap: 6px;
 }
 
-.upload-config input {
+.upload-config input:not([type="checkbox"]) {
   width: 100%;
   min-width: 0;
   height: 34px;
@@ -504,6 +504,12 @@ body.controls-open .control-rail {
 .upload-config input:focus {
   outline: 2px solid rgba(252, 91, 31, 0.16);
   border-color: rgba(252, 91, 31, 0.46);
+}
+
+.token-remember-row {
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .upload-config-row {
