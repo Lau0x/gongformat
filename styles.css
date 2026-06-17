@@ -548,7 +548,7 @@ body.controls-open .control-rail {
 .image-item-main {
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 4px;
 }
 
 .image-item-main strong,
@@ -598,6 +598,41 @@ body.controls-open .control-rail {
 .image-status.uploading {
   background: rgba(40, 106, 155, 0.12);
   color: var(--blue);
+}
+
+.image-status.fetching {
+  background: rgba(40, 106, 155, 0.12);
+  color: var(--blue);
+}
+
+.image-progress {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(40, 106, 155, 0.1);
+}
+
+.image-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+  transition: width 0.18s ease;
+}
+
+.image-item.is-fetching .image-progress span {
+  animation: remote-image-progress 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes remote-image-progress {
+  from {
+    width: 18%;
+  }
+
+  to {
+    width: 58%;
+  }
 }
 
 .stats-grid {

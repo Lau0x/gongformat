@@ -105,9 +105,11 @@ const refs = {
   indentToggle: document.getElementById("indentToggle"),
   centerImageToggle: document.getElementById("centerImageToggle"),
   darkCodeToggle: document.getElementById("darkCodeToggle"),
+  captionPlaceholderToggle: document.getElementById("captionPlaceholderToggle"),
   copyRich: document.getElementById("copyRich"),
   copyHtml: document.getElementById("copyHtml"),
   copyMarkdown: document.getElementById("copyMarkdown"),
+  formatMarkdown: document.getElementById("formatMarkdown"),
   resetButton: document.getElementById("resetButton"),
   browseImages: document.getElementById("browseImages"),
   imageInput: document.getElementById("imageInput"),
@@ -151,6 +153,7 @@ function init() {
   refs.indentToggle.checked = state.options.indent;
   refs.centerImageToggle.checked = state.options.centerImages;
   refs.darkCodeToggle.checked = state.options.darkCode;
+  refs.captionPlaceholderToggle.checked = state.options.captionPlaceholder;
   refs.uploadEndpoint.value = state.upload.endpoint;
   refs.uploadToken.value = state.upload.token;
   refs.rememberUploadToken.checked = state.upload.rememberToken;
@@ -179,7 +182,8 @@ function loadState() {
     options: {
       indent: false,
       centerImages: true,
-      darkCode: false
+      darkCode: false,
+      captionPlaceholder: false
     },
     upload: {
       endpoint: "",
@@ -246,6 +250,7 @@ function normalizeDraft(draft) {
       indent: false,
       centerImages: true,
       darkCode: false,
+      captionPlaceholder: false,
       ...(draft.options || {})
     },
     createdAt,
@@ -264,6 +269,7 @@ function createDraftFromState(source) {
       indent: false,
       centerImages: true,
       darkCode: false,
+      captionPlaceholder: false,
       ...(source.options || {})
     },
     createdAt: now,
@@ -304,9 +310,11 @@ function bindEvents() {
   refs.indentToggle.addEventListener("change", () => updateOption("indent", refs.indentToggle.checked));
   refs.centerImageToggle.addEventListener("change", () => updateOption("centerImages", refs.centerImageToggle.checked));
   refs.darkCodeToggle.addEventListener("change", () => updateOption("darkCode", refs.darkCodeToggle.checked));
+  refs.captionPlaceholderToggle.addEventListener("change", () => updateOption("captionPlaceholder", refs.captionPlaceholderToggle.checked));
   refs.copyRich.addEventListener("click", copyRichText);
   refs.copyHtml.addEventListener("click", copyHtml);
   refs.copyMarkdown.addEventListener("click", copyMarkdown);
+  refs.formatMarkdown.addEventListener("click", formatCurrentMarkdown);
   refs.toggleDrafts.addEventListener("click", toggleDrafts);
   refs.toggleControls.addEventListener("click", toggleControls);
   refs.mobilePreview.addEventListener("click", () => setPreviewMode("mobile"));
@@ -431,7 +439,8 @@ function createNewDraft() {
     options: {
       indent: false,
       centerImages: true,
-      darkCode: false
+      darkCode: false,
+      captionPlaceholder: false
     }
   });
   drafts.unshift(draft);
@@ -460,6 +469,7 @@ function syncInputsFromState() {
   refs.indentToggle.checked = state.options.indent;
   refs.centerImageToggle.checked = state.options.centerImages;
   refs.darkCodeToggle.checked = state.options.darkCode;
+  refs.captionPlaceholderToggle.checked = state.options.captionPlaceholder;
 }
 
 function formatDraftTime(value) {
@@ -509,6 +519,48 @@ function updateUploadConfig(key, value) {
   persistState();
 }
 
+function formatCurrentMarkdown() {
+  const formatted = formatMarkdownSpacing(state.markdown);
+  if (formatted === state.markdown) {
+    showToast("已是整理后的格式");
+    return;
+  }
+
+  state.markdown = formatted;
+  refs.markdownInput.value = formatted;
+  render();
+  showToast("已整理中英文空格");
+}
+
+function formatMarkdownSpacing(markdown) {
+  return markdown
+    .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g)
+    .map((segment, index) => index % 2 ? segment : formatMarkdownTextSegment(segment))
+    .join("");
+}
+
+function formatMarkdownTextSegment(text) {
+  const protectedValues = [];
+  const protect = (match) => {
+    const token = `\u0000${protectedValues.length}\u0000`;
+    protectedValues.push(match);
+    return token;
+  };
+
+  let output = text
+    .replace(/`[^`\n]*`/g, protect)
+    .replace(/https?:\/\/[^\s)>"']+/g, protect);
+
+  output = output
+    .replace(/([\u2e80-\u9fff])([A-Za-z0-9])/g, "$1 $2")
+    .replace(/([A-Za-z0-9])([\u2e80-\u9fff])/g, "$1 $2")
+    .replace(/([\u2e80-\u9fff])([&%@#][A-Za-z0-9])/g, "$1 $2")
+    .replace(/([A-Za-z0-9][&%@#]?)([\u2e80-\u9fff])/g, "$1 $2")
+    .replace(/[ \t]+$/gm, "");
+
+  return output.replace(/\u0000(\d+)\u0000/g, (match, index) => protectedValues[Number(index)] || match);
+}
+
 function render() {
   const source = markdownToHtml(getRenderableMarkdown(state.markdown));
   const cleaned = sanitizeHtml(source);
@@ -553,10 +605,10 @@ function syncScroll(source, target) {
 }
 
 function getRenderableMarkdown(markdown) {
-  return markdown.replace(/!\[([^\]]*)]\(uploading:\/\/([^)]+)\)/g, (match, alt, id) => {
+  return markdown.replace(/!\[([^\]]*)]\(uploading:\/\/([^\s)]+)([^)]*)\)/g, (match, alt, id, suffix) => {
     const item = uploadQueue.find((entry) => entry.id === id);
     const url = item && (item.remoteUrl || item.previewUrl);
-    return url ? `![${alt}](${url})` : match;
+    return url ? `![${alt}](${url}${suffix})` : match;
   });
 }
 
@@ -589,11 +641,26 @@ function fallbackMarkdown(markdown) {
 
 function inlineMarkdown(text) {
   return escapeHtml(text)
-    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img alt="$1" src="$2">')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, target) => {
+      const url = extractInlineMarkdownUrl(target);
+      return url ? `<img alt="${alt}" src="${url}">` : match;
+    })
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, target) => {
+      const url = extractInlineMarkdownUrl(target);
+      return url ? `<a href="${url}">${label}</a>` : match;
+    })
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+}
+
+function extractInlineMarkdownUrl(target) {
+  const trimmed = target.trim();
+  const bracketed = trimmed.match(/^&lt;(.+?)&gt;/);
+  if (bracketed) return bracketed[1];
+
+  const match = trimmed.match(/^(\S+)/);
+  return match ? match[1] : "";
 }
 
 function renderCodeBlock(text) {
@@ -701,7 +768,68 @@ function handlePasteImages(event) {
   if (hasImageFiles(files)) {
     event.preventDefault();
     handleImageFiles(files);
+    return;
   }
+
+  const pastedMarkdown = event.clipboardData ? event.clipboardData.getData("text/plain") : "";
+  const remoteImages = queueRemoteImagesFromMarkdown(pastedMarkdown);
+  if (remoteImages.count) {
+    event.preventDefault();
+    insertAtCursor(remoteImages.markdown);
+    render();
+    renderImageQueue();
+
+    if (state.upload.endpoint.trim()) {
+      uploadAllImages();
+    } else {
+      showToast(`已识别 ${remoteImages.count} 张远程图`);
+    }
+  }
+}
+
+function queueRemoteImagesFromMarkdown(markdown) {
+  if (!markdown) return { markdown, count: 0 };
+
+  const queuedByUrl = new Map();
+  let count = 0;
+  const transformed = markdown.replace(/!\[([^\]]*)]\(([^)\n]+)\)/g, (match, alt, target) => {
+    const url = extractRemoteMarkdownImageUrl(target);
+    if (!url) return match;
+
+    let item = queuedByUrl.get(url);
+    if (!item) {
+      item = queueRemoteImageUrl(url, alt);
+      queuedByUrl.set(url, item);
+      count += 1;
+    }
+
+    return match.replace(url, `uploading://${item.id}`);
+  });
+
+  return { markdown: transformed, count };
+}
+
+function extractRemoteMarkdownImageUrl(target) {
+  const match = target.trim().match(/^<?(https?:\/\/[^\s>]+)>?/i);
+  return match ? match[1] : "";
+}
+
+function queueRemoteImageUrl(url, alt) {
+  const id = createId();
+  const item = {
+    id,
+    file: null,
+    name: alt.trim() ? cleanAltText(alt) : getRemoteImageName(url),
+    sourceUrl: url,
+    previewUrl: url,
+    remoteUrl: "",
+    status: "queued",
+    error: "",
+    progress: 0
+  };
+
+  uploadQueue.push(item);
+  return item;
 }
 
 function handleDropImages(event) {
@@ -744,14 +872,21 @@ function queueImageFile(file) {
   const item = {
     id,
     file,
+    sourceUrl: "",
     previewUrl,
     remoteUrl: "",
     status: "queued",
-    error: ""
+    error: "",
+    progress: 0
   };
 
   uploadQueue.push(item);
-  insertAtCursor(`\n\n![${cleanAltText(file.name)}](uploading://${id})\n\n`);
+  insertAtCursor(buildInsertedImageMarkdown(cleanAltText(file.name), `uploading://${id}`));
+}
+
+function buildInsertedImageMarkdown(alt, url) {
+  const caption = state.options.captionPlaceholder ? "\n\n*图注待补*" : "";
+  return `\n\n![${alt}](${url})${caption}\n\n`;
 }
 
 function insertAtCursor(text) {
@@ -789,13 +924,18 @@ async function uploadAllImages() {
 }
 
 async function uploadImageItem(item) {
-  item.status = "uploading";
-  item.error = "";
-  renderImageQueue();
-
   try {
+    if (!item.file && item.sourceUrl) {
+      await fetchRemoteImageItem(item);
+    }
+
+    item.status = "uploading";
+    item.error = "";
+    item.progress = 0;
+    renderImageQueue();
+
     const form = new FormData();
-    form.append(state.upload.fieldName.trim() || "image", item.file, item.file.name);
+    form.append(state.upload.fieldName.trim() || "image", item.file, getImageName(item));
 
     const headers = {};
     const token = state.upload.token.trim();
@@ -804,15 +944,13 @@ async function uploadImageItem(item) {
       headers.Authorization = /^(bearer|basic|token)\s/i.test(token) ? token : `Bearer ${token}`;
     }
 
-    const response = await fetch(state.upload.endpoint.trim(), {
-      method: "POST",
-      headers,
-      body: form
+    const response = await sendUploadRequest(form, headers, (progress) => {
+      item.progress = progress;
+      renderImageQueue();
     });
-    const responseText = await response.text();
-    const payload = parseUploadResponse(responseText);
+    const payload = parseUploadResponse(response.text);
 
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       throw new Error(typeof payload === "string" ? payload : response.statusText);
     }
 
@@ -823,6 +961,7 @@ async function uploadImageItem(item) {
 
     item.remoteUrl = uploadedUrl;
     item.status = "done";
+    item.progress = 100;
     item.corsOk = await testImageCors(uploadedUrl);
     replaceImagePlaceholder(item.id, uploadedUrl);
     render();
@@ -830,10 +969,64 @@ async function uploadImageItem(item) {
   } catch (error) {
     item.status = "error";
     item.error = error.message || "上传失败";
+    item.progress = 0;
     showToast("图片上传失败");
   }
 
   renderImageQueue();
+}
+
+async function fetchRemoteImageItem(item) {
+  item.status = "fetching";
+  item.error = "";
+  item.progress = 0;
+  renderImageQueue();
+
+  try {
+    const response = await fetch(item.sourceUrl);
+    if (!response.ok) throw new Error(response.statusText || "远程图片读取失败");
+
+    const blob = await response.blob();
+    if (blob.type && !blob.type.startsWith("image/")) {
+      throw new Error("远程地址不是图片");
+    }
+
+    const name = ensureImageExtension(getImageName(item), blob.type);
+    item.file = new File([blob], name, { type: blob.type || "image/jpeg" });
+    item.name = name;
+  } catch (error) {
+    item.status = "error";
+    item.error = error.message === "Failed to fetch"
+      ? "远程图片无法读取，可能限制跨域"
+      : (error.message || "远程图片读取失败");
+    renderImageQueue();
+    throw new Error(item.error);
+  }
+}
+
+function sendUploadRequest(form, headers, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", state.upload.endpoint.trim());
+
+    Object.entries(headers).forEach(([key, value]) => xhr.setRequestHeader(key, value));
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      onProgress(Math.min(98, Math.round((event.loaded / event.total) * 100)));
+    };
+
+    xhr.onload = () => {
+      onProgress(100);
+      resolve({
+        status: xhr.status,
+        statusText: xhr.statusText,
+        text: xhr.responseText
+      });
+    };
+    xhr.onerror = () => reject(new Error("上传请求失败"));
+    xhr.send(form);
+  });
 }
 
 function parseUploadResponse(text) {
@@ -902,12 +1095,13 @@ function renderImageQueue() {
 
   uploadQueue.slice().reverse().forEach((item) => {
     const row = document.createElement("div");
-    row.className = "image-item";
+    row.className = `image-item is-${item.status}`;
     row.innerHTML = `
       <img src="${item.remoteUrl || item.previewUrl}" alt="">
       <span class="image-item-main">
-        <strong>${escapeHtml(item.file.name)}</strong>
+        <strong>${escapeHtml(getImageName(item))}</strong>
         <span>${escapeHtml(getImageMeta(item))}</span>
+        ${renderImageProgress(item)}
       </span>
       ${renderImageStatus(item)}
     `;
@@ -933,22 +1127,32 @@ function renderImageStatus(item) {
 
   const labels = {
     queued: "待传",
+    fetching: "读取中",
     uploading: "上传中",
     done: "完成",
     error: "重试"
   };
 
-  if (item.status === "done" || item.status === "uploading") {
+  if (item.status === "done" || item.status === "uploading" || item.status === "fetching") {
     return `<span class="image-status ${item.status}">${labels[item.status]}</span>`;
   }
 
   return `<button class="image-status ${item.status}" type="button" data-upload-id="${item.id}">${labels[item.status]}</button>`;
 }
 
+function renderImageProgress(item) {
+  if (item.status !== "uploading" && item.status !== "fetching") return "";
+  const progress = item.status === "fetching" ? 18 : Math.max(3, item.progress || 0);
+  return `<span class="image-progress"><span style="width:${progress}%"></span></span>`;
+}
+
 function getImageMeta(item) {
   if (item.status === "error") return item.error;
+  if (item.status === "fetching") return "读取远程图片";
+  if (item.status === "uploading") return `上传 ${item.progress || 0}%`;
   if (item.remoteUrl) return item.remoteUrl;
-  return formatBytes(item.file.size);
+  if (item.sourceUrl) return item.sourceUrl;
+  return item.file ? formatBytes(item.file.size) : "待上传";
 }
 
 function formatBytes(size) {
@@ -959,6 +1163,41 @@ function formatBytes(size) {
 
 function cleanAltText(value) {
   return value.replace(/\.[^.]+$/, "").replace(/[[\]()\n\r]/g, " ").trim() || "image";
+}
+
+function getImageName(item) {
+  if (item.name) return item.name;
+  if (item.file && item.file.name) return item.file.name;
+  if (item.sourceUrl) return getRemoteImageName(item.sourceUrl);
+  return "image";
+}
+
+function getRemoteImageName(url) {
+  try {
+    const pathname = new URL(url).pathname;
+    const filename = decodeURIComponent(pathname.split("/").pop() || "");
+    return cleanFileName(filename) || "image";
+  } catch {
+    return "image";
+  }
+}
+
+function cleanFileName(value) {
+  return value.replace(/[\\/:*?"<>|\[\]\n\r]+/g, " ").trim();
+}
+
+function ensureImageExtension(name, type) {
+  if (/\.[a-z0-9]{2,5}$/i.test(name)) return name;
+
+  const extensions = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/svg+xml": "svg"
+  };
+  const extension = extensions[type] || "jpg";
+  return `${name}.${extension}`;
 }
 
 function createId() {
@@ -1279,6 +1518,24 @@ function applyWechatStyles(root, theme, options) {
     node.style.lineHeight = "inherit";
     node.style.textIndent = "0";
   });
+
+  styleCaptionPlaceholders(root, styles.figcaption);
+}
+
+function styleCaptionPlaceholders(root, captionStyle) {
+  root.querySelectorAll("p").forEach((node) => {
+    if (node.textContent.trim() !== "图注待补") return;
+    if (!node.querySelector("em")) return;
+
+    const previous = node.previousElementSibling;
+    const followsImage = previous && (previous.matches("img") || previous.querySelector("img"));
+    if (!followsImage) return;
+
+    node.style.cssText = toStyle(captionStyle);
+    node.querySelectorAll("em").forEach((em) => {
+      em.style.cssText = "color:inherit;font-style:normal;";
+    });
+  });
 }
 
 function decorateCodeBlocks(root) {
@@ -1522,7 +1779,8 @@ function resetDraft() {
     options: {
       indent: false,
       centerImages: true,
-      darkCode: false
+      darkCode: false,
+      captionPlaceholder: false
     },
     upload
   };
@@ -1531,6 +1789,7 @@ function resetDraft() {
   refs.indentToggle.checked = state.options.indent;
   refs.centerImageToggle.checked = state.options.centerImages;
   refs.darkCodeToggle.checked = state.options.darkCode;
+  refs.captionPlaceholderToggle.checked = state.options.captionPlaceholder;
   renderThemeButtons();
   render();
   showToast("已恢复示例稿");

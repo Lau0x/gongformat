@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>GongFormat</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%231d2a26'/%3E%3Ctext x='32' y='42' text-anchor='middle' font-size='34' fill='white' font-family='Arial'%3EG%3C/text%3E%3C/svg%3E">
-    <link rel="stylesheet" href="styles.css?v=20260610-token">
+    <link rel="stylesheet" href="styles.css?v=20260617-images">
   </head>
   <body>
     <div class="app-shell">
@@ -20,6 +20,7 @@
         <div class="actions">
           <button class="ghost-button" id="toggleDrafts" type="button" aria-expanded="false">草稿</button>
           <button class="ghost-button" id="toggleControls" type="button">设置</button>
+          <button class="ghost-button" id="formatMarkdown" type="button">格式化</button>
           <button class="ghost-button" id="copyMarkdown">复制 Markdown</button>
           <button class="ghost-button" id="copyHtml">复制 HTML</button>
           <button class="primary-button" id="copyRich">复制到公众号</button>
@@ -98,6 +99,10 @@
               <span class="control-label">图片</span>
               <button id="browseImages" class="mini-button" type="button">选择</button>
             </div>
+            <label class="toggle-row">
+              <input id="captionPlaceholderToggle" type="checkbox">
+              <span>插入图注占位</span>
+            </label>
             <label id="imageDropzone" class="dropzone">
               <input id="imageInput" type="file" accept="image/*" multiple>
               <strong>拖拽 / 粘贴</strong>
@@ -142,6 +147,6 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="app.js?v=20260610-token"></script>
+    <script src="app.js?v=20260617-images"></script>
   </body>
 </html>
