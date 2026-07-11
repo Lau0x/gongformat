@@ -350,14 +350,28 @@ function renderDraftList() {
     .slice()
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .forEach((draft) => {
-      const item = document.createElement("button");
-      item.type = "button";
+      const item = document.createElement("div");
       item.className = `draft-item${draft.id === state.activeDraftId ? " is-active" : ""}`;
-      item.innerHTML = `
+
+      const selectButton = document.createElement("button");
+      selectButton.type = "button";
+      selectButton.className = "draft-select";
+      selectButton.innerHTML = `
         <strong>${escapeHtml(draft.title || "未命名文章")}</strong>
         <span>${formatDraftTime(draft.updatedAt)}</span>
       `;
-      item.addEventListener("click", () => selectDraft(draft.id));
+      selectButton.addEventListener("click", () => selectDraft(draft.id));
+
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "draft-delete";
+      deleteButton.textContent = "删";
+      deleteButton.title = "删除草稿";
+      deleteButton.setAttribute("aria-label", `删除${draft.title || "未命名文章"}`);
+      deleteButton.addEventListener("click", () => deleteDraft(draft.id));
+
+      item.appendChild(selectButton);
+      item.appendChild(deleteButton);
       refs.draftList.appendChild(item);
     });
 }
@@ -427,6 +441,46 @@ function selectDraft(id) {
   renderThemeButtons();
   renderDraftList();
   render();
+}
+
+function deleteDraft(id) {
+  const draft = drafts.find((item) => item.id === id);
+  if (!draft) return;
+  if (drafts.length === 1) {
+    showToast("至少保留一篇草稿");
+    return;
+  }
+  if (!window.confirm(`确定删除“${draft.title || "未命名文章"}”吗？`)) return;
+
+  clearTimeout(saveTimer);
+  persistNow();
+  drafts = drafts.filter((item) => item.id !== id);
+
+  if (id === state.activeDraftId) {
+    const next = drafts.slice().sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    state = {
+      ...state,
+      activeDraftId: next.id,
+      title: next.title,
+      markdown: next.markdown,
+      theme: next.theme,
+      options: {
+        ...state.options,
+        ...next.options
+      }
+    };
+    syncInputsFromState();
+    refs.markdownInput.scrollTop = 0;
+    refs.phoneStage.scrollTop = 0;
+    renderThemeButtons();
+    render();
+  } else {
+    renderDraftList();
+  }
+
+  clearTimeout(saveTimer);
+  persistNow();
+  showToast("草稿已删除");
 }
 
 function createNewDraft() {
