@@ -133,6 +133,7 @@ let state = loadState();
 let drafts = loadDrafts(state);
 let toastTimer;
 let saveTimer;
+let renderTimer;
 let uploadQueue = [];
 let imageCorsCache = new Map();
 let syncingScroll = false;
@@ -299,12 +300,12 @@ function applyActiveDraftToState(currentState) {
 function bindEvents() {
   refs.titleInput.addEventListener("input", () => {
     state.title = refs.titleInput.value;
-    render();
+    persistState();
   });
 
   refs.markdownInput.addEventListener("input", () => {
     state.markdown = refs.markdownInput.value;
-    render();
+    scheduleRender();
   });
 
   refs.indentToggle.addEventListener("change", () => updateOption("indent", refs.indentToggle.checked));
@@ -349,14 +350,28 @@ function renderDraftList() {
     .slice()
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .forEach((draft) => {
-      const item = document.createElement("button");
-      item.type = "button";
+      const item = document.createElement("div");
       item.className = `draft-item${draft.id === state.activeDraftId ? " is-active" : ""}`;
-      item.innerHTML = `
+
+      const selectButton = document.createElement("button");
+      selectButton.type = "button";
+      selectButton.className = "draft-select";
+      selectButton.innerHTML = `
         <strong>${escapeHtml(draft.title || "未命名文章")}</strong>
         <span>${formatDraftTime(draft.updatedAt)}</span>
       `;
-      item.addEventListener("click", () => selectDraft(draft.id));
+      selectButton.addEventListener("click", () => selectDraft(draft.id));
+
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "draft-delete";
+      deleteButton.textContent = "删";
+      deleteButton.title = "删除草稿";
+      deleteButton.setAttribute("aria-label", `删除${draft.title || "未命名文章"}`);
+      deleteButton.addEventListener("click", () => deleteDraft(draft.id));
+
+      item.appendChild(selectButton);
+      item.appendChild(deleteButton);
       refs.draftList.appendChild(item);
     });
 }
@@ -426,6 +441,46 @@ function selectDraft(id) {
   renderThemeButtons();
   renderDraftList();
   render();
+}
+
+function deleteDraft(id) {
+  const draft = drafts.find((item) => item.id === id);
+  if (!draft) return;
+  if (drafts.length === 1) {
+    showToast("至少保留一篇草稿");
+    return;
+  }
+  if (!window.confirm(`确定删除“${draft.title || "未命名文章"}”吗？`)) return;
+
+  clearTimeout(saveTimer);
+  persistNow();
+  drafts = drafts.filter((item) => item.id !== id);
+
+  if (id === state.activeDraftId) {
+    const next = drafts.slice().sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    state = {
+      ...state,
+      activeDraftId: next.id,
+      title: next.title,
+      markdown: next.markdown,
+      theme: next.theme,
+      options: {
+        ...state.options,
+        ...next.options
+      }
+    };
+    syncInputsFromState();
+    refs.markdownInput.scrollTop = 0;
+    refs.phoneStage.scrollTop = 0;
+    renderThemeButtons();
+    render();
+  } else {
+    renderDraftList();
+  }
+
+  clearTimeout(saveTimer);
+  persistNow();
+  showToast("草稿已删除");
 }
 
 function createNewDraft() {
@@ -561,7 +616,28 @@ function formatMarkdownTextSegment(text) {
   return output.replace(/\u0000(\d+)\u0000/g, (match, index) => protectedValues[Number(index)] || match);
 }
 
+function scheduleRender() {
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(() => {
+    renderTimer = null;
+    render();
+  }, 80);
+}
+
+function flushScheduledRender() {
+  if (!renderTimer) return;
+  clearTimeout(renderTimer);
+  renderTimer = null;
+  render();
+}
+
 function render() {
+  if (renderTimer) {
+    clearTimeout(renderTimer);
+    renderTimer = null;
+  }
+
+  const imageQueueChanged = pruneUnusedImageItems();
   const source = markdownToHtml(getRenderableMarkdown(state.markdown));
   const cleaned = sanitizeHtml(source);
   const theme = themes[state.theme];
@@ -572,6 +648,7 @@ function render() {
   renderStats();
   persistState();
   syncScroll(refs.markdownInput, refs.phoneStage);
+  if (imageQueueChanged) renderImageQueue();
 }
 
 function wrapWechatContent(root, theme) {
@@ -634,6 +711,9 @@ function fallbackMarkdown(markdown) {
     if (/^> /.test(text)) return `<blockquote>${inlineMarkdown(text.replace(/^> /gm, ""))}</blockquote>`;
     if (/^[-*] /.test(text)) {
       return `<ul>${text.split("\n").map((line) => `<li>${inlineMarkdown(line.replace(/^[-*] /, ""))}</li>`).join("")}</ul>`;
+    }
+    if (/^\d+[.)] /.test(text)) {
+      return `<ol>${text.split("\n").map((line) => `<li>${inlineMarkdown(line.replace(/^\d+[.)] /, ""))}</li>`).join("")}</ol>`;
     }
     return `<p>${inlineMarkdown(text)}</p>`;
   }).join("");
@@ -884,6 +964,32 @@ function queueImageFile(file) {
   insertAtCursor(buildInsertedImageMarkdown(cleanAltText(file.name), `uploading://${id}`));
 }
 
+function releaseImagePreview(item) {
+  if (!item.previewUrl || !item.previewUrl.startsWith("blob:")) return;
+  URL.revokeObjectURL(item.previewUrl);
+  item.previewUrl = "";
+}
+
+function pruneUnusedImageItems() {
+  const otherDraftMarkdown = drafts
+    .filter((draft) => draft.id !== state.activeDraftId)
+    .map((draft) => draft.markdown);
+  const markdownSources = [state.markdown, ...otherDraftMarkdown];
+  const previousLength = uploadQueue.length;
+
+  uploadQueue = uploadQueue.filter((item) => {
+    const placeholder = `uploading://${item.id}`;
+    const referenced = markdownSources.some((markdown) => markdown.includes(placeholder));
+    const active = item.status === "fetching" || item.status === "uploading";
+
+    if (referenced || active || item.status === "done") return true;
+    releaseImagePreview(item);
+    return false;
+  });
+
+  return uploadQueue.length !== previousLength;
+}
+
 function buildInsertedImageMarkdown(alt, url) {
   const caption = state.options.captionPlaceholder ? "\n\n*图注待补*" : "";
   return `\n\n![${alt}](${url})${caption}\n\n`;
@@ -959,7 +1065,10 @@ async function uploadImageItem(item) {
       throw new Error("上传响应里没有公网图片地址");
     }
 
+    item.name = getImageName(item);
     item.remoteUrl = uploadedUrl;
+    releaseImagePreview(item);
+    item.file = null;
     item.status = "done";
     item.progress = 100;
     item.corsOk = await testImageCors(uploadedUrl);
@@ -1096,8 +1205,10 @@ function renderImageQueue() {
   uploadQueue.slice().reverse().forEach((item) => {
     const row = document.createElement("div");
     row.className = `image-item is-${item.status}`;
+    const image = document.createElement("img");
+    image.src = item.remoteUrl || item.previewUrl;
+    image.alt = "";
     row.innerHTML = `
-      <img src="${item.remoteUrl || item.previewUrl}" alt="">
       <span class="image-item-main">
         <strong>${escapeHtml(getImageName(item))}</strong>
         <span>${escapeHtml(getImageMeta(item))}</span>
@@ -1105,6 +1216,7 @@ function renderImageQueue() {
       </span>
       ${renderImageStatus(item)}
     `;
+    row.prepend(image);
     refs.imageQueue.appendChild(row);
   });
 
@@ -1235,23 +1347,34 @@ async function prepareImagesForCopy() {
 
 function hasBlockingImageRefs() {
   return [...state.markdown.matchAll(/!\[[^\]]*]\(([^)]+)\)/g)].some((match) => {
-    return !/^https?:\/\//i.test(match[1].trim());
+    return !extractRemoteMarkdownImageUrl(match[1]);
   });
 }
 
 function hasWechatRiskyImageRefs() {
   return [...state.markdown.matchAll(/!\[[^\]]*]\(([^)]+)\)/g)].some((match) => {
-    return isWechatRiskyImageUrl(match[1]);
+    return isWechatRiskyImageUrl(extractRemoteMarkdownImageUrl(match[1]));
   });
 }
 
 function isWechatRiskyImageUrl(value) {
-  const url = value.trim().split("?")[0].toLowerCase();
-  return url.endsWith(".webp") || url.endsWith(".svg");
+  if (!value) return false;
+
+  let pathname;
+  try {
+    pathname = new URL(value).pathname;
+  } catch {
+    pathname = value.trim().split(/[?#]/)[0];
+  }
+
+  const normalized = pathname.toLowerCase();
+  return normalized.endsWith(".webp") || normalized.endsWith(".svg");
 }
 
 async function hasWechatCorsRiskImageRefs() {
-  const urls = [...state.markdown.matchAll(/!\[[^\]]*]\(([^)]+)\)/g)].map((match) => match[1].trim());
+  const urls = [...state.markdown.matchAll(/!\[[^\]]*]\(([^)]+)\)/g)]
+    .map((match) => extractRemoteMarkdownImageUrl(match[1]))
+    .filter(Boolean);
 
   refs.wechatPreview.querySelectorAll("img").forEach((image) => {
     const url = image.currentSrc || image.src;
@@ -1280,7 +1403,7 @@ function testImageCors(url) {
     mode: "cors",
     cache: "no-store"
   })
-    .then((response) => response.ok)
+    .then((response) => response.ok ? true : testImageElementCors(url))
     .catch(() => testImageElementCors(url));
 
   imageCorsCache.set(url, result);
@@ -1668,10 +1791,15 @@ function persistNow() {
       token: state.upload.rememberToken ? state.upload.token : ""
     }
   };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(savedState));
-  localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
-  renderDraftList();
-  refs.saveState.textContent = "已保存";
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(savedState));
+    localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+    renderDraftList();
+    refs.saveState.textContent = "已保存";
+  } catch {
+    refs.saveState.textContent = "保存失败";
+    showToast("浏览器存储空间不足");
+  }
 }
 
 function saveActiveDraft() {
@@ -1688,6 +1816,7 @@ function saveActiveDraft() {
 }
 
 async function copyRichText() {
+  flushScheduledRender();
   if (!(await prepareImagesForCopy())) return;
 
   const html = `<section data-gongformat="body" style="margin:0;padding:0;background:#fff;background-color:#fff;">${refs.wechatPreview.innerHTML}</section>`;
@@ -1712,6 +1841,7 @@ async function copyRichText() {
 }
 
 async function copyHtml() {
+  flushScheduledRender();
   if (!(await prepareImagesForCopy())) return;
 
   const html = refs.wechatPreview.innerHTML;
