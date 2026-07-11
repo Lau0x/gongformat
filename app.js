@@ -635,6 +635,9 @@ function fallbackMarkdown(markdown) {
     if (/^[-*] /.test(text)) {
       return `<ul>${text.split("\n").map((line) => `<li>${inlineMarkdown(line.replace(/^[-*] /, ""))}</li>`).join("")}</ul>`;
     }
+    if (/^\d+[.)] /.test(text)) {
+      return `<ol>${text.split("\n").map((line) => `<li>${inlineMarkdown(line.replace(/^\d+[.)] /, ""))}</li>`).join("")}</ol>`;
+    }
     return `<p>${inlineMarkdown(text)}</p>`;
   }).join("");
 }
@@ -1280,7 +1283,7 @@ function testImageCors(url) {
     mode: "cors",
     cache: "no-store"
   })
-    .then((response) => response.ok)
+    .then((response) => response.ok ? true : testImageElementCors(url))
     .catch(() => testImageElementCors(url));
 
   imageCorsCache.set(url, result);
