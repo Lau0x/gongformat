@@ -1832,11 +1832,12 @@ async function copyRichText() {
 
   const copyRoot = refs.wechatPreview.cloneNode(true);
   copyRoot.querySelectorAll("li > strong").forEach((strong) => {
-    const span = document.createElement("span");
-    span.style.cssText = strong.style.cssText;
-    span.style.display = "inline";
-    span.append(...strong.childNodes);
-    strong.replaceWith(span);
+    const item = strong.parentElement;
+    const line = document.createElement("section");
+    line.style.margin = "0";
+    line.style.padding = "0";
+    line.append(...item.childNodes);
+    item.append(line);
   });
   const html = `<section data-gongformat="body" style="margin:0;padding:0;background:#fff;background-color:#fff;">${copyRoot.innerHTML}</section>`;
   const plain = refs.wechatPreview.innerText.trim();
