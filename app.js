@@ -1830,7 +1830,15 @@ async function copyRichText() {
   flushScheduledRender();
   if (!(await prepareImagesForCopy())) return;
 
-  const html = `<section data-gongformat="body" style="margin:0;padding:0;background:#fff;background-color:#fff;">${refs.wechatPreview.innerHTML}</section>`;
+  const copyRoot = refs.wechatPreview.cloneNode(true);
+  copyRoot.querySelectorAll("li > strong").forEach((strong) => {
+    const span = document.createElement("span");
+    span.style.cssText = strong.style.cssText;
+    span.style.display = "inline";
+    span.append(...strong.childNodes);
+    strong.replaceWith(span);
+  });
+  const html = `<section data-gongformat="body" style="margin:0;padding:0;background:#fff;background-color:#fff;">${copyRoot.innerHTML}</section>`;
   const plain = refs.wechatPreview.innerText.trim();
 
   try {
