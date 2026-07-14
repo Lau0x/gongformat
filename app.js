@@ -874,7 +874,7 @@ function queueRemoteImagesFromMarkdown(markdown) {
   let count = 0;
   const transformed = markdown.replace(/!\[([^\]]*)]\(([^)\n]+)\)/g, (match, alt, target) => {
     const url = extractRemoteMarkdownImageUrl(target);
-    if (!url) return match;
+    if (!url || isImageFromUploadHost(url)) return match;
 
     let item = queuedByUrl.get(url);
     if (!item) {
@@ -892,6 +892,17 @@ function queueRemoteImagesFromMarkdown(markdown) {
 function extractRemoteMarkdownImageUrl(target) {
   const match = target.trim().match(/^<?(https?:\/\/[^\s>]+)>?/i);
   return match ? match[1] : "";
+}
+
+function isImageFromUploadHost(url) {
+  const endpoint = state.upload.endpoint.trim();
+  if (!endpoint) return false;
+
+  try {
+    return new URL(url).hostname === new URL(endpoint).hostname;
+  } catch {
+    return false;
+  }
 }
 
 function queueRemoteImageUrl(url, alt) {
