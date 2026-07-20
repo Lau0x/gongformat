@@ -307,6 +307,7 @@ function bindEvents() {
     state.markdown = refs.markdownInput.value;
     scheduleRender();
   });
+  refs.markdownInput.addEventListener("keydown", handleMarkdownShortcut);
 
   refs.indentToggle.addEventListener("change", () => updateOption("indent", refs.indentToggle.checked));
   refs.centerImageToggle.addEventListener("change", () => updateOption("centerImages", refs.centerImageToggle.checked));
@@ -341,6 +342,100 @@ function bindEvents() {
   refs.imageDropzone.addEventListener("drop", handleDropImages);
   refs.imageDropzone.addEventListener("dragover", handleDragOver);
   refs.imageDropzone.addEventListener("dragleave", () => refs.imageDropzone.classList.remove("is-active"));
+}
+
+function handleMarkdownShortcut(event) {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+
+  const key = event.key.toLowerCase();
+  if (!["b", "i", "k"].includes(key)) return;
+
+  event.preventDefault();
+  if (event.repeat) return;
+
+  if (key === "b") toggleMarkdownWrap("**");
+  if (key === "i") toggleMarkdownWrap("*");
+  if (key === "k") toggleMarkdownLink();
+}
+
+function toggleMarkdownWrap(marker) {
+  const input = refs.markdownInput;
+  const value = input.value;
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  const selected = value.slice(start, end);
+  const hasOuterMarkers = start >= marker.length
+    && value.slice(start - marker.length, start) === marker
+    && value.slice(end, end + marker.length) === marker
+    && (marker !== "*" || (value[start - 2] !== "*" && value[end + 1] !== "*"));
+
+  if (hasOuterMarkers) {
+    applyMarkdownEdit(
+      start - marker.length,
+      end + marker.length,
+      selected,
+      start - marker.length,
+      end - marker.length
+    );
+    return;
+  }
+
+  const hasInnerMarkers = selected.length >= marker.length * 2
+    && selected.startsWith(marker)
+    && selected.endsWith(marker)
+    && (marker !== "*" || (!selected.startsWith("**") && !selected.endsWith("**")));
+
+  if (hasInnerMarkers) {
+    const unwrapped = selected.slice(marker.length, -marker.length);
+    applyMarkdownEdit(start, end, unwrapped, start, start + unwrapped.length);
+    return;
+  }
+
+  applyMarkdownEdit(
+    start,
+    end,
+    `${marker}${selected}${marker}`,
+    start + marker.length,
+    start + marker.length + selected.length
+  );
+}
+
+function toggleMarkdownLink() {
+  const input = refs.markdownInput;
+  const value = input.value;
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  const selected = value.slice(start, end);
+  const completeLink = selected.match(/^\[([^\]]+)]\(([^)]*)\)$/);
+
+  if (completeLink) {
+    const label = completeLink[1];
+    applyMarkdownEdit(start, end, label, start, start + label.length);
+    return;
+  }
+
+  const suffix = value.slice(end);
+  if (start > 0 && value[start - 1] === "[" && suffix.startsWith("](")) {
+    const closingParen = suffix.indexOf(")");
+    if (closingParen >= 2) {
+      applyMarkdownEdit(start - 1, end + closingParen + 1, selected, start - 1, end - 1);
+      return;
+    }
+  }
+
+  const label = selected || "链接文字";
+  const url = "https://";
+  const replacement = `[${label}](${url})`;
+  const urlStart = start + label.length + 3;
+  applyMarkdownEdit(start, end, replacement, urlStart, urlStart + url.length);
+}
+
+function applyMarkdownEdit(start, end, replacement, selectionStart, selectionEnd) {
+  const input = refs.markdownInput;
+  input.setRangeText(replacement, start, end, "end");
+  input.focus();
+  input.setSelectionRange(selectionStart, selectionEnd);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 function renderDraftList() {
