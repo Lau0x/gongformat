@@ -137,6 +137,9 @@ let renderTimer;
 let uploadQueue = [];
 let imageCorsCache = new Map();
 let syncingScroll = false;
+let updatingMarkdownHistory = false;
+const markdownUndoStack = [];
+const markdownRedoStack = [];
 
 state = applyActiveDraftToState(state);
 
@@ -304,9 +307,11 @@ function bindEvents() {
   });
 
   refs.markdownInput.addEventListener("input", () => {
+    if (!updatingMarkdownHistory) markdownRedoStack.length = 0;
     state.markdown = refs.markdownInput.value;
     scheduleRender();
   });
+  refs.markdownInput.addEventListener("keydown", handleMarkdownShortcut);
 
   refs.indentToggle.addEventListener("change", () => updateOption("indent", refs.indentToggle.checked));
   refs.centerImageToggle.addEventListener("change", () => updateOption("centerImages", refs.centerImageToggle.checked));
@@ -341,6 +346,203 @@ function bindEvents() {
   refs.imageDropzone.addEventListener("drop", handleDropImages);
   refs.imageDropzone.addEventListener("dragover", handleDragOver);
   refs.imageDropzone.addEventListener("dragleave", () => refs.imageDropzone.classList.remove("is-active"));
+}
+
+function handleMarkdownShortcut(event) {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+
+  const key = event.key.toLowerCase();
+
+  if (key === "z") {
+    const handled = event.shiftKey ? redoMarkdownEdit() : undoMarkdownEdit();
+    if (handled) event.preventDefault();
+    return;
+  }
+
+  if (key === "y" && event.ctrlKey && !event.metaKey && !event.shiftKey) {
+    if (redoMarkdownEdit()) event.preventDefault();
+    return;
+  }
+
+  const isOrderedList = event.shiftKey && (event.code === "Digit7" || key === "7");
+  const isUnorderedList = event.shiftKey && (event.code === "Digit8" || key === "8");
+  const isStrikethrough = event.shiftKey && key === "x";
+  const isPlainShortcut = !event.shiftKey && ["b", "e", "i", "k"].includes(key);
+
+  if (!isOrderedList && !isUnorderedList && !isStrikethrough && !isPlainShortcut) return;
+
+  event.preventDefault();
+  if (event.repeat) return;
+
+  if (key === "b") toggleMarkdownWrap("**");
+  if (key === "i") toggleMarkdownWrap("*");
+  if (key === "k") toggleMarkdownLink();
+  if (key === "e") toggleMarkdownWrap("`");
+  if (isStrikethrough) toggleMarkdownWrap("~~");
+  if (isOrderedList) toggleMarkdownList(true);
+  if (isUnorderedList) toggleMarkdownList(false);
+}
+
+function toggleMarkdownWrap(marker) {
+  const input = refs.markdownInput;
+  const value = input.value;
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  const selected = value.slice(start, end);
+  const hasOuterMarkers = start >= marker.length
+    && value.slice(start - marker.length, start) === marker
+    && value.slice(end, end + marker.length) === marker
+    && (marker !== "*" || (value[start - 2] !== "*" && value[end + 1] !== "*"));
+
+  if (hasOuterMarkers) {
+    applyMarkdownEdit(
+      start - marker.length,
+      end + marker.length,
+      selected,
+      start - marker.length,
+      end - marker.length
+    );
+    return;
+  }
+
+  const hasInnerMarkers = selected.length >= marker.length * 2
+    && selected.startsWith(marker)
+    && selected.endsWith(marker)
+    && (marker !== "*" || (!selected.startsWith("**") && !selected.endsWith("**")));
+
+  if (hasInnerMarkers) {
+    const unwrapped = selected.slice(marker.length, -marker.length);
+    applyMarkdownEdit(start, end, unwrapped, start, start + unwrapped.length);
+    return;
+  }
+
+  applyMarkdownEdit(
+    start,
+    end,
+    `${marker}${selected}${marker}`,
+    start + marker.length,
+    start + marker.length + selected.length
+  );
+}
+
+function toggleMarkdownLink() {
+  const input = refs.markdownInput;
+  const value = input.value;
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  const selected = value.slice(start, end);
+  const completeLink = selected.match(/^\[([^\]]+)]\(([^)]*)\)$/);
+
+  if (completeLink) {
+    const label = completeLink[1];
+    applyMarkdownEdit(start, end, label, start, start + label.length);
+    return;
+  }
+
+  const suffix = value.slice(end);
+  if (start > 0 && value[start - 1] === "[" && suffix.startsWith("](")) {
+    const closingParen = suffix.indexOf(")");
+    if (closingParen >= 2) {
+      applyMarkdownEdit(start - 1, end + closingParen + 1, selected, start - 1, end - 1);
+      return;
+    }
+  }
+
+  const label = selected || "链接文字";
+  const url = "https://";
+  const replacement = `[${label}](${url})`;
+  const urlStart = start + label.length + 3;
+  applyMarkdownEdit(start, end, replacement, urlStart, urlStart + url.length);
+}
+
+function toggleMarkdownList(ordered) {
+  const input = refs.markdownInput;
+  const value = input.value;
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  const blockStart = value.lastIndexOf("\n", start - 1) + 1;
+  const nextLineBreak = value.indexOf("\n", end);
+  const blockEnd = nextLineBreak === -1 ? value.length : nextLineBreak;
+  const lines = value.slice(blockStart, blockEnd).split("\n");
+  const targetPattern = ordered ? /^\s*\d+\.\s+/ : /^\s*[-+*]\s+/;
+  const removePattern = /^(\s*)(?:[-+*]|\d+\.)\s+/;
+  const populatedLines = lines.filter((line) => line.trim());
+  const shouldRemove = populatedLines.length > 0 && populatedLines.every((line) => targetPattern.test(line));
+  let itemNumber = 1;
+
+  const replacement = lines.map((line) => {
+    if (!line.trim()) {
+      if (lines.length === 1 && !shouldRemove) return `${line}${ordered ? "1. " : "- "}`;
+      return line;
+    }
+    if (shouldRemove) return line.replace(removePattern, "$1");
+
+    const content = line.replace(removePattern, "$1");
+    const indent = content.match(/^\s*/)[0];
+    const prefix = ordered ? `${itemNumber++}. ` : "- ";
+    return `${indent}${prefix}${content.slice(indent.length)}`;
+  }).join("\n");
+
+  const selectionStart = start === end ? blockStart + replacement.length : blockStart;
+  const selectionEnd = start === end ? selectionStart : blockStart + replacement.length;
+  applyMarkdownEdit(blockStart, blockEnd, replacement, selectionStart, selectionEnd);
+}
+
+function applyMarkdownEdit(start, end, replacement, selectionStart, selectionEnd) {
+  const input = refs.markdownInput;
+  const before = captureMarkdownSnapshot();
+  input.setRangeText(replacement, start, end, "end");
+  input.focus();
+  input.setSelectionRange(selectionStart, selectionEnd);
+  markdownUndoStack.push({ before, after: captureMarkdownSnapshot() });
+  markdownRedoStack.length = 0;
+  dispatchMarkdownInput();
+}
+
+function undoMarkdownEdit() {
+  const edit = markdownUndoStack[markdownUndoStack.length - 1];
+  if (!edit || !matchesMarkdownSnapshot(edit.after)) return false;
+
+  markdownUndoStack.pop();
+  markdownRedoStack.push(edit);
+  restoreMarkdownSnapshot(edit.before);
+  return true;
+}
+
+function redoMarkdownEdit() {
+  const edit = markdownRedoStack[markdownRedoStack.length - 1];
+  if (!edit || !matchesMarkdownSnapshot(edit.before)) return false;
+
+  markdownRedoStack.pop();
+  markdownUndoStack.push(edit);
+  restoreMarkdownSnapshot(edit.after);
+  return true;
+}
+
+function captureMarkdownSnapshot() {
+  return {
+    draftId: state.activeDraftId,
+    value: refs.markdownInput.value,
+    selectionStart: refs.markdownInput.selectionStart,
+    selectionEnd: refs.markdownInput.selectionEnd
+  };
+}
+
+function matchesMarkdownSnapshot(snapshot) {
+  return snapshot.draftId === state.activeDraftId && snapshot.value === refs.markdownInput.value;
+}
+
+function restoreMarkdownSnapshot(snapshot) {
+  refs.markdownInput.value = snapshot.value;
+  refs.markdownInput.focus();
+  refs.markdownInput.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
+  dispatchMarkdownInput();
+}
+
+function dispatchMarkdownInput() {
+  updatingMarkdownHistory = true;
+  refs.markdownInput.dispatchEvent(new Event("input", { bubbles: true }));
+  updatingMarkdownHistory = false;
 }
 
 function renderDraftList() {
