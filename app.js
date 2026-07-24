@@ -901,11 +901,11 @@ function markdownToHtml(markdown) {
 }
 
 function fallbackMarkdown(markdown) {
-  const blocks = markdown.split(/\n{2,}/);
+  const blocks = splitMarkdownBlocks(markdown);
   return blocks.map((block) => {
     const text = block.trim();
     if (!text) return "";
-    if (/^```/.test(text)) return renderCodeBlock(text);
+    if (/^(?:`{3,}|~{3,})/.test(text)) return renderCodeBlock(text);
     if (isMarkdownTable(text)) return renderMarkdownTable(text);
     if (/^### /.test(text)) return `<h3>${inlineMarkdown(text.slice(4))}</h3>`;
     if (/^## /.test(text)) return `<h2>${inlineMarkdown(text.slice(3))}</h2>`;
@@ -919,6 +919,48 @@ function fallbackMarkdown(markdown) {
     }
     return `<p>${inlineMarkdown(text)}</p>`;
   }).join("");
+}
+
+function splitMarkdownBlocks(markdown) {
+  const blocks = [];
+  let current = [];
+  let fence = "";
+
+  const flush = () => {
+    if (!current.length) return;
+    blocks.push(current.join("\n"));
+    current = [];
+  };
+
+  markdown.split("\n").forEach((line) => {
+    if (fence) {
+      current.push(line);
+      const closingFence = new RegExp(`^\\s*${fence[0]}{${fence.length},}\\s*$`);
+      if (closingFence.test(line)) {
+        fence = "";
+        flush();
+      }
+      return;
+    }
+
+    const openingFence = line.match(/^\s*(`{3,}|~{3,})/);
+    if (openingFence) {
+      flush();
+      fence = openingFence[1];
+      current.push(line);
+      return;
+    }
+
+    if (!line.trim()) {
+      flush();
+      return;
+    }
+
+    current.push(line);
+  });
+
+  flush();
+  return blocks;
 }
 
 function inlineMarkdown(text) {
@@ -946,9 +988,18 @@ function extractInlineMarkdownUrl(target) {
 }
 
 function renderCodeBlock(text) {
-  const match = text.match(/^```([^\n]*)\n?([\s\S]*?)\n?```$/);
-  const lang = match && match[1] ? match[1].trim().replace(/[^\w-]/g, "") : "";
-  const code = match ? match[2] : text.replace(/^```[^\n]*\n?|\n?```$/g, "");
+  const lines = text.split("\n");
+  const opening = lines[0].match(/^\s*(`{3,}|~{3,})([^\n]*)$/);
+  const lang = opening && opening[2] ? opening[2].trim().replace(/[^\w-]/g, "") : "";
+  const codeLines = opening ? lines.slice(1) : lines;
+
+  if (opening && codeLines.length) {
+    const fence = opening[1];
+    const closingFence = new RegExp(`^\\s*${fence[0]}{${fence.length},}\\s*$`);
+    if (closingFence.test(codeLines[codeLines.length - 1])) codeLines.pop();
+  }
+
+  const code = codeLines.join("\n");
   return `<pre><code${lang ? ` class="language-${lang}"` : ""}>${escapeHtml(code)}</code></pre>`;
 }
 
